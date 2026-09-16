@@ -174,7 +174,7 @@ async def admin_add_traffic(message: Message, db: Database, state: FSMContext) -
         return
     traffic = _parse_positive_int(message.text or "")
     if traffic is None:
-        await message.answer("لطفاً یک عدد صحیح و بزرگ‌تر از صفر ارسال کنید؛ مثلاً <code>80</code>.")
+        await message.answer("لطفاً یک عدد صحیح و بزرگ‌تر از صفر ارسال کنید؛ مثلاً <code>80</code>.", reply_markup=cancel_input_keyboard())
         return
     await state.update_data(traffic_gb=traffic)
     await state.set_state(AddPlan.price)
@@ -191,7 +191,7 @@ async def admin_add_price(message: Message, db: Database, state: FSMContext) -> 
         return
     price = _parse_positive_int(message.text or "")
     if price is None:
-        await message.answer("لطفاً قیمت را به‌صورت عدد صحیح و بزرگ‌تر از صفر ارسال کنید؛ مثلاً <code>350000</code>.")
+        await message.answer("لطفاً قیمت را به‌صورت عدد صحیح و بزرگ‌تر از صفر ارسال کنید؛ مثلاً <code>350000</code>.", reply_markup=cancel_input_keyboard())
         return
 
     data = await state.get_data()
@@ -306,13 +306,13 @@ async def admin_save_traffic(message: Message, db: Database, state: FSMContext) 
         return
     traffic = _parse_positive_int(message.text or "")
     if traffic is None:
-        await message.answer("لطفاً یک عدد صحیح و بزرگ‌تر از صفر ارسال کنید.")
+        await message.answer("لطفاً یک عدد صحیح و بزرگ‌تر از صفر ارسال کنید.", reply_markup=cancel_input_keyboard())
         return
     data = await state.get_data()
     try:
         db.update_plan_traffic(data["plan_id"], traffic)
     except ValueError as exc:
-        await message.answer(str(exc))
+        await message.answer(str(exc), reply_markup=cancel_input_keyboard())
         return
     plan = db.get_plan(data["plan_id"])
     await state.clear()
@@ -349,7 +349,7 @@ async def admin_save_price(message: Message, db: Database, state: FSMContext) ->
         return
     price = _parse_positive_int(message.text or "")
     if price is None:
-        await message.answer("لطفاً قیمت را به‌صورت عدد صحیح و بزرگ‌تر از صفر ارسال کنید.")
+        await message.answer("لطفاً قیمت را به‌صورت عدد صحیح و بزرگ‌تر از صفر ارسال کنید.", reply_markup=cancel_input_keyboard())
         return
     data = await state.get_data()
     db.update_plan_price(data["plan_id"], price)

@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
@@ -23,6 +23,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 مدیریت پلن‌ها", callback_data="admin_plans")],
             [InlineKeyboardButton(text="🧾 سفارش‌های در انتظار بررسی", callback_data="admin_orders")],
             [InlineKeyboardButton(text="✅ وضعیت ربات", callback_data="admin_status")],
+            [InlineKeyboardButton(text="🔄 شروع از اول", callback_data="admin_root")],
         ]
     )
 
@@ -99,13 +100,31 @@ def cancel_order_confirm_keyboard(order_id: int) -> InlineKeyboardMarkup:
     )
 
 
+def after_order_deleted_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 خرید کانفیگ", callback_data="buy")],
+            [InlineKeyboardButton(text="🧾 سفارش‌های من", callback_data="my_orders")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+
+
+def empty_orders_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 خرید کانفیگ", callback_data="buy")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+
+
 def orders_keyboard(orders) -> InlineKeyboardMarkup:
     status_icons = {
         "pending_payment": "💳",
         "pending_review": "⏳",
         "approved": "✅",
         "rejected": "❌",
-        "cancelled": "🚫",
     }
     rows = [
         [
@@ -147,11 +166,28 @@ def cancel_receipt_keyboard(order_id: int, *, can_cancel_order: bool) -> InlineK
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def empty_services_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 خرید کانفیگ", callback_data="buy")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+
+
 def services_keyboard(services) -> InlineKeyboardMarkup:
+    status_icons = {
+        "active": "✅",
+        "inactive": "⛔",
+        "expired": "⌛",
+    }
     rows = [
         [
             InlineKeyboardButton(
-                text=f"📦 سرویس #{service['id']} — {service['traffic_gb']} گیگ — {service['duration_label']}",
+                text=(
+                    f"{status_icons.get(service['status'], '📦')} "
+                    f"سرویس #{service['id']} — {service['traffic_gb']} گیگ — {service['duration_label']}"
+                ),
                 callback_data=f"service_view:{service['id']}",
             )
         ]
@@ -161,9 +197,21 @@ def services_keyboard(services) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def service_details_keyboard() -> InlineKeyboardMarkup:
+def service_details_keyboard(service) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📋 کپی کانفیگ",
+                    copy_text=CopyTextButton(text=service["config_uri"]),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📋 کپی لینک اشتراک",
+                    copy_text=CopyTextButton(text=service["subscription_url"]),
+                )
+            ],
             [InlineKeyboardButton(text="⬅️ سرویس‌های من", callback_data="services")],
             [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
         ]

@@ -7,8 +7,11 @@ from aiogram.types import CallbackQuery, Message
 
 from app.db import Database
 from app.keyboards import (
+    after_order_deleted_keyboard,
     cancel_order_confirm_keyboard,
     cancel_receipt_keyboard,
+    empty_orders_keyboard,
+    empty_services_keyboard,
     home_keyboard,
     order_details_keyboard,
     orders_keyboard,
@@ -33,7 +36,6 @@ def _status_text(status: str) -> str:
         "pending_review": "در انتظار بررسی رسید ⏳",
         "approved": "تأیید شده ✅",
         "rejected": "رد شده ❌",
-        "cancelled": "لغو شده 🚫",
     }.get(status, "نامشخص")
 
 
@@ -59,6 +61,15 @@ def _payment_text(order) -> str:
     )
 
 
+def _format_datetime(value: str | None) -> str:
+    if not value:
+        return "نامشخص"
+    value = value.replace("T", " ")
+    if len(value) >= 16:
+        return f"{value[:10]} — {value[11:16]}"
+    return value
+
+
 def _service_text(service) -> str:
     status = {
         "active": "فعال ✅",
@@ -67,11 +78,14 @@ def _service_text(service) -> str:
     }.get(service["status"], "نامشخص")
     return (
         f"📦 <b>سرویس #{service['id']}</b>\n\n"
+        f"🧾 سفارش: #{service['order_id']}\n"
         f"🗓 مدت: {escape(service['duration_label'])}\n"
         f"📊 حجم: {service['traffic_gb']} گیگابایت\n"
-        f"📌 وضعیت: {status}\n\n"
-        f"🔗 <b>Subscription</b>\n<code>{escape(service['subscription_url'])}</code>\n\n"
-        f"⚙️ <b>Config نمونه</b>\n<code>{escape(service['config_uri'])}</code>\n\n"
+        f"📌 وضعیت: {status}\n"
+        f"🕒 تاریخ ساخت: {_format_datetime(service['created_at'])}\n"
+        f"⌛ تاریخ انقضا: {_format_datetime(service['expires_at'])}\n\n"
+        f"🔗 <b>لینک اشتراک</b>\n<code>{escape(service['subscription_url'])}</code>\n\n"
+        f"⚙️ <b>کانفیگ نمونه</b>\n<code>{escape(service['config_uri'])}</code>\n\n"
         "⚠️ این سرویس فقط برای نمایش پروژه است و واقعی نیست."
     )
 
@@ -106,7 +120,7 @@ async def my_orders(callback: CallbackQuery, db: Database, state: FSMContext) ->
     if not orders:
         await callback.message.edit_text(
             "🧾 هنوز سفارشی ثبت نکرده‌اید.",
-            reply_markup=home_keyboard(),
+            reply_markup=empty_orders_keyboard(),
         )
     else:
         await callback.message.edit_text(
@@ -134,8 +148,6 @@ async def view_order(callback: CallbackQuery, db: Database, state: FSMContext) -
         text += "\n\nسفارش تأیید شده و سرویس ساخته شده است."
     elif order["status"] == "rejected":
         text += "\n\nرسید این سفارش تأیید نشده است. برای خرید یک سفارش جدید ثبت کنید."
-    elif order["status"] == "cancelled":
-        text += "\n\nاین سفارش قبل از پرداخت توسط شما لغو شده است."
 
     await callback.message.edit_text(
         text,
@@ -171,12 +183,11 @@ async def cancel_order(callback: CallbackQuery, db: Database, state: FSMContext)
         await callback.answer("این سفارش دیگر قابل لغو نیست.", show_alert=True)
         return
 
-    order = db.get_order_for_user(order_id, callback.from_user.id)
     await callback.message.edit_text(
-        "✅ سفارش با موفقیت لغو شد.\n\n" + _order_text(order),
-        reply_markup=order_details_keyboard(order_id, order["status"]),
+        "✅ سفارش با موفقیت حذف شد و دیگر در لیست سفارش‌های شما نمایش داده نمی‌شود.",
+        reply_markup=after_order_deleted_keyboard(),
     )
-    await callback.answer("سفارش لغو شد.")
+    await callback.answer("سفارش حذف شد.")
 
 
 @router.callback_query(F.data.startswith("order_receipt:"))
@@ -257,8 +268,8 @@ async def my_services(callback: CallbackQuery, db: Database, state: FSMContext) 
     services = db.list_services_for_user(callback.from_user.id)
     if not services:
         await callback.message.edit_text(
-            "📦 هنوز سرویس فعالی برای شما ساخته نشده است.",
-            reply_markup=home_keyboard(),
+            "📦 هنوز سرویسی برای شما ساخته نشده است.",
+            reply_markup=empty_services_keyboard(),
         )
     else:
         await callback.message.edit_text(
@@ -277,6 +288,6 @@ async def view_service(callback: CallbackQuery, db: Database) -> None:
         return
     await callback.message.edit_text(
         _service_text(service),
-        reply_markup=service_details_keyboard(),
+        reply_markup=service_details_keyboard(service),
     )
     await callback.answer()

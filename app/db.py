@@ -86,6 +86,7 @@ class Database:
                         CHECK (status IN ('active', 'inactive', 'expired')),
                     config_uri TEXT NOT NULL,
                     subscription_url TEXT NOT NULL,
+                    expires_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
@@ -98,6 +99,8 @@ class Database:
                 """
             )
 
+            self._migrate_services_expiry(conn)
+            self._remove_legacy_cancelled_orders(conn)
             self._seed_catalog(conn)
             self._localize_categories(conn)
 
@@ -138,6 +141,33 @@ class Database:
             FROM orders_legacy;
 
             DROP TABLE orders_legacy;
+            """
+        )
+
+    def _migrate_services_expiry(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(services)").fetchall()}
+        if "expires_at" not in columns:
+            conn.execute("ALTER TABLE services ADD COLUMN expires_at TEXT")
+
+        conn.execute(
+            """
+            UPDATE services
+            SET expires_at = datetime(created_at, '+' || duration_months || ' months')
+            WHERE expires_at IS NULL
+            """
+        )
+
+    def _remove_legacy_cancelled_orders(self, conn: sqlite3.Connection) -> None:
+        conn.execute("DELETE FROM orders WHERE status = 'cancelled'")
+
+    def _refresh_service_statuses(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            UPDATE services
+            SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'active'
+              AND expires_at IS NOT NULL
+              AND datetime(expires_at) <= CURRENT_TIMESTAMP
             """
         )
 
@@ -433,7 +463,7 @@ class Database:
             return conn.execute(
                 """
                 SELECT * FROM orders
-                WHERE user_id = ?
+                WHERE user_id = ? AND status != 'cancelled'
                 ORDER BY id DESC
                 LIMIT ?
                 """,
@@ -482,8 +512,7 @@ class Database:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                UPDATE orders
-                SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                DELETE FROM orders
                 WHERE id = ? AND user_id = ? AND status = 'pending_payment'
                 """,
                 (order_id, user_id),
@@ -525,9 +554,10 @@ class Database:
                     traffic_gb,
                     status,
                     config_uri,
-                    subscription_url
+                    subscription_url,
+                    expires_at
                 )
-                VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'active', ?, ?, datetime('now', '+' || ? || ' months'))
                 """,
                 (
                     order["user_id"],
@@ -537,6 +567,7 @@ class Database:
                     order["traffic_gb"],
                     config_uri,
                     subscription_url,
+                    order["duration_months"],
                 ),
             )
             return conn.execute(
@@ -560,6 +591,7 @@ class Database:
 
     def list_services_for_user(self, user_id: int):
         with self._connect() as conn:
+            self._refresh_service_statuses(conn)
             return conn.execute(
                 """
                 SELECT * FROM services
@@ -571,6 +603,7 @@ class Database:
 
     def get_service_for_user(self, service_id: int, user_id: int):
         with self._connect() as conn:
+            self._refresh_service_statuses(conn)
             return conn.execute(
                 "SELECT * FROM services WHERE id = ? AND user_id = ?",
                 (service_id, user_id),
