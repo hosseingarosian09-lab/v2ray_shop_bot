@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 
 from app.config import get_settings
 from app.db import Database
-from app.handlers import admin, common
+from app.handlers import admin, common, plans
 
 
 async def main() -> None:
@@ -22,6 +22,7 @@ async def main() -> None:
     dp = Dispatcher()
 
     dp.include_router(admin.router)
+    dp.include_router(plans.router)
     dp.include_router(common.router)
 
     await bot.delete_webhook(drop_pending_updates=False)

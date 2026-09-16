@@ -1,5 +1,6 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.db import Database
@@ -17,56 +18,45 @@ async def _send_home(message: Message, db: Database, *, text: str | None = None)
         db.upsert_user(
             message.from_user.id,
             message.from_user.username,
-            message.from_user.first_name or "User",
+            message.from_user.first_name or "کاربر",
         )
-        is_admin = _is_admin(db, message.from_user.id)
-    else:
-        is_admin = False
 
     await message.answer(
-        text or "Welcome to V2Ray Shop Bot 👋\n\nMilestone 1 is running successfully.",
-        reply_markup=main_menu(is_admin),
+        text or "👋 به فروشگاه V2Ray خوش آمدید.",
+        reply_markup=main_menu(),
     )
 
 
 @router.message(CommandStart())
-async def start_handler(message: Message, db: Database) -> None:
+async def start_handler(message: Message, db: Database, state: FSMContext) -> None:
+    await state.clear()
     await _send_home(message, db)
 
 
 @router.message(Command("cancel"))
-async def cancel_handler(message: Message, db: Database) -> None:
-    await _send_home(message, db, text="Cancelled. Back to the main menu.")
+async def cancel_handler(message: Message, db: Database, state: FSMContext) -> None:
+    await state.clear()
+    await _send_home(message, db, text="عملیات لغو شد و به منوی اصلی برگشتید.")
 
 
 @router.message(Command("whoami"))
 async def whoami_handler(message: Message) -> None:
     if not message.from_user:
         return
-    await message.answer(f"Your Telegram user ID is: <code>{message.from_user.id}</code>")
+    await message.answer(f"شناسه تلگرام شما: <code>{message.from_user.id}</code>")
 
 
 @router.callback_query(F.data == "home")
-async def home_callback(callback: CallbackQuery, db: Database) -> None:
-    if not callback.from_user:
-        return
+async def home_callback(callback: CallbackQuery, db: Database, state: FSMContext) -> None:
+    await state.clear()
     db.upsert_user(
         callback.from_user.id,
         callback.from_user.username,
-        callback.from_user.first_name or "User",
+        callback.from_user.first_name or "کاربر",
     )
     await callback.message.edit_text(
-        "Main Menu",
-        reply_markup=main_menu(_is_admin(db, callback.from_user.id)),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "buy")
-async def buy_placeholder(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
-        "🛒 Buying plans will be implemented in Milestone 2.",
-        reply_markup=home_keyboard(),
+        "🏠 <b>منوی اصلی</b>",
+        reply_markup=main_menu(),
     )
     await callback.answer()
 
@@ -74,7 +64,7 @@ async def buy_placeholder(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "services")
 async def services_placeholder(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
-        "📦 User services will be implemented in a later milestone.",
+        "📦 بخش سرویس‌های من در مرحله بعدی تکمیل می‌شود.",
         reply_markup=home_keyboard(),
     )
     await callback.answer()
@@ -83,11 +73,11 @@ async def services_placeholder(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "help")
 async def help_callback(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
-        "ℹ️ Commands\n\n"
-        "/start - main menu\n"
-        "/cancel - return to main menu\n"
-        "/whoami - show your Telegram user ID\n"
-        "/claimadmin CODE - claim admin access once",
+        "ℹ️ <b>راهنما</b>\n\n"
+        "/start - نمایش منوی اصلی\n"
+        "/cancel - لغو عملیات در حال انجام\n"
+        "/whoami - نمایش شناسه تلگرام\n"
+        "/admin - ورود به پنل مدیریت برای ادمین",
         reply_markup=home_keyboard(),
     )
     await callback.answer()
