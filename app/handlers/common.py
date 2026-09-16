@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.db import Database
-from app.keyboards import home_keyboard, main_menu
+from app.keyboards import main_menu
 
 router = Router()
 
@@ -32,7 +32,7 @@ async def start_handler(message: Message, db: Database, state: FSMContext) -> No
 @router.message(Command("cancel"))
 async def cancel_handler(message: Message, db: Database, state: FSMContext) -> None:
     await state.clear()
-    await _send_home(message, db, text="عملیات لغو شد و به منوی اصلی برگشتید.")
+    await _send_home(message, db, text="عملیات فعلی متوقف شد و به منوی اصلی برگشتید.")
 
 
 @router.message(Command("whoami"))
@@ -50,17 +50,15 @@ async def home_callback(callback: CallbackQuery, db: Database, state: FSMContext
         callback.from_user.username,
         callback.from_user.first_name or "کاربر",
     )
-    await callback.message.edit_text(
-        "🏠 <b>منوی اصلی</b>",
-        reply_markup=main_menu(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "services")
-async def services_placeholder(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
-        "📦 بخش سرویس‌های من در مرحله بعدی تکمیل می‌شود.",
-        reply_markup=home_keyboard(),
-    )
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(
+            "🏠 <b>منوی اصلی</b>",
+            reply_markup=main_menu(),
+        )
+    else:
+        await callback.message.edit_text(
+            "🏠 <b>منوی اصلی</b>",
+            reply_markup=main_menu(),
+        )
     await callback.answer()

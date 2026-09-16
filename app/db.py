@@ -1,4 +1,5 @@
 import sqlite3
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -60,20 +61,85 @@ class Database:
                     traffic_gb INTEGER NOT NULL CHECK (traffic_gb > 0),
                     price INTEGER NOT NULL CHECK (price > 0),
                     status TEXT NOT NULL DEFAULT 'pending_payment'
-                        CHECK (status IN ('pending_payment', 'pending_review', 'approved', 'rejected')),
+                        CHECK (status IN ('pending_payment', 'pending_review', 'approved', 'rejected', 'cancelled')),
                     receipt_file_id TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
                     FOREIGN KEY (plan_id) REFERENCES plans(id)
                 );
+                """
+            )
+
+            self._migrate_orders_for_cancelled(conn)
+
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS services (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    order_id INTEGER NOT NULL UNIQUE,
+                    duration_months INTEGER NOT NULL CHECK (duration_months > 0),
+                    duration_label TEXT NOT NULL,
+                    traffic_gb INTEGER NOT NULL CHECK (traffic_gb > 0),
+                    status TEXT NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'inactive', 'expired')),
+                    config_uri TEXT NOT NULL,
+                    subscription_url TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (order_id) REFERENCES orders(id)
+                );
 
                 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
                 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+                CREATE INDEX IF NOT EXISTS idx_services_user_id ON services(user_id);
                 """
             )
+
             self._seed_catalog(conn)
             self._localize_categories(conn)
+
+    def _migrate_orders_for_cancelled(self, conn: sqlite3.Connection) -> None:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'"
+        ).fetchone()
+        if not row or not row["sql"] or "cancelled" in row["sql"]:
+            return
+
+        conn.execute("ALTER TABLE orders RENAME TO orders_legacy")
+        conn.executescript(
+            """
+            CREATE TABLE orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                plan_id INTEGER,
+                duration_months INTEGER NOT NULL CHECK (duration_months > 0),
+                duration_label TEXT NOT NULL,
+                traffic_gb INTEGER NOT NULL CHECK (traffic_gb > 0),
+                price INTEGER NOT NULL CHECK (price > 0),
+                status TEXT NOT NULL DEFAULT 'pending_payment'
+                    CHECK (status IN ('pending_payment', 'pending_review', 'approved', 'rejected', 'cancelled')),
+                receipt_file_id TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (plan_id) REFERENCES plans(id)
+            );
+
+            INSERT INTO orders (
+                id, user_id, plan_id, duration_months, duration_label,
+                traffic_gb, price, status, receipt_file_id, created_at, updated_at
+            )
+            SELECT
+                id, user_id, plan_id, duration_months, duration_label,
+                traffic_gb, price, status, receipt_file_id, created_at, updated_at
+            FROM orders_legacy;
+
+            DROP TABLE orders_legacy;
+            """
+        )
 
     def _seed_catalog(self, conn: sqlite3.Connection) -> None:
         categories = [
@@ -347,6 +413,21 @@ class Database:
                 (order_id, user_id),
             ).fetchone()
 
+    def get_order_for_admin(self, order_id: int):
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT
+                    o.*,
+                    u.username,
+                    u.first_name
+                FROM orders o
+                JOIN users u ON u.user_id = o.user_id
+                WHERE o.id = ?
+                """,
+                (order_id,),
+            ).fetchone()
+
     def list_orders_for_user(self, user_id: int, limit: int = 20):
         with self._connect() as conn:
             return conn.execute(
@@ -357,6 +438,23 @@ class Database:
                 LIMIT ?
                 """,
                 (user_id, limit),
+            ).fetchall()
+
+    def list_pending_review_orders(self, limit: int = 50):
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT
+                    o.*,
+                    u.username,
+                    u.first_name
+                FROM orders o
+                JOIN users u ON u.user_id = o.user_id
+                WHERE o.status = 'pending_review'
+                ORDER BY o.id ASC
+                LIMIT ?
+                """,
+                (limit,),
             ).fetchall()
 
     def save_order_receipt(self, order_id: int, user_id: int, file_id: str) -> bool:
@@ -379,3 +477,101 @@ class Database:
                 (file_id, order_id, user_id),
             )
             return True
+
+    def cancel_order(self, order_id: int, user_id: int) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE orders
+                SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status = 'pending_payment'
+                """,
+                (order_id, user_id),
+            )
+            return cursor.rowcount == 1
+
+    def approve_order(self, order_id: int):
+        demo_uuid = str(uuid.uuid4())
+        demo_sub_token = uuid.uuid4().hex
+        config_uri = (
+            f"vless://{demo_uuid}@demo.example.com:443"
+            f"?encryption=none&security=tls&type=ws#Demo-Service-{order_id}"
+        )
+        subscription_url = f"https://demo.example.com/sub/{demo_sub_token}"
+
+        with self._connect() as conn:
+            order = conn.execute(
+                "SELECT * FROM orders WHERE id = ?",
+                (order_id,),
+            ).fetchone()
+            if not order or order["status"] != "pending_review" or not order["receipt_file_id"]:
+                return None
+
+            conn.execute(
+                """
+                UPDATE orders
+                SET status = 'approved', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'pending_review'
+                """,
+                (order_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO services (
+                    user_id,
+                    order_id,
+                    duration_months,
+                    duration_label,
+                    traffic_gb,
+                    status,
+                    config_uri,
+                    subscription_url
+                )
+                VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                """,
+                (
+                    order["user_id"],
+                    order["id"],
+                    order["duration_months"],
+                    order["duration_label"],
+                    order["traffic_gb"],
+                    config_uri,
+                    subscription_url,
+                ),
+            )
+            return conn.execute(
+                "SELECT * FROM services WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+
+    def reject_order(self, order_id: int) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE orders
+                SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'pending_review'
+                """,
+                (order_id,),
+            )
+            return cursor.rowcount == 1
+
+    # ----- Services -----
+
+    def list_services_for_user(self, user_id: int):
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM services
+                WHERE user_id = ?
+                ORDER BY id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+
+    def get_service_for_user(self, service_id: int, user_id: int):
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT * FROM services WHERE id = ? AND user_id = ?",
+                (service_id, user_id),
+            ).fetchone()
