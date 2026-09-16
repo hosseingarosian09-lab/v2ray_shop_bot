@@ -102,6 +102,18 @@ async def admin_command(message: Message, db: Database, state: FSMContext) -> No
     await message.answer("🛠 <b>پنل مدیریت</b>", reply_markup=admin_keyboard())
 
 
+@router.callback_query(F.data == "admin_root_notice")
+async def admin_root_notice(callback: CallbackQuery, db: Database, state: FSMContext) -> None:
+    if not _is_admin(db, callback.from_user.id):
+        await callback.answer("دسترسی غیرمجاز", show_alert=True)
+        return
+    await state.clear()
+    await callback.answer(
+        "شما همین حالا در صفحه اصلی پنل مدیریت هستید.",
+        show_alert=True,
+    )
+
+
 @router.callback_query(F.data == "admin_root")
 async def admin_root(callback: CallbackQuery, db: Database, state: FSMContext) -> None:
     if not _is_admin(db, callback.from_user.id):

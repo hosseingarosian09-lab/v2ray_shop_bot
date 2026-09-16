@@ -23,7 +23,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 مدیریت پلن‌ها", callback_data="admin_plans")],
             [InlineKeyboardButton(text="🧾 سفارش‌های در انتظار بررسی", callback_data="admin_orders")],
             [InlineKeyboardButton(text="✅ وضعیت ربات", callback_data="admin_status")],
-            [InlineKeyboardButton(text="🔄 شروع از اول", callback_data="admin_root")],
+            [InlineKeyboardButton(text="🔄 شروع از اول", callback_data="admin_root_notice")],
         ]
     )
 
