@@ -9,10 +9,6 @@ from app.keyboards import home_keyboard, main_menu
 router = Router()
 
 
-def _is_admin(db: Database, user_id: int) -> bool:
-    return db.get_admin_id() == user_id
-
-
 async def _send_home(message: Message, db: Database, *, text: str | None = None) -> None:
     if message.from_user:
         db.upsert_user(
@@ -65,19 +61,6 @@ async def home_callback(callback: CallbackQuery, db: Database, state: FSMContext
 async def services_placeholder(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         "📦 بخش سرویس‌های من در مرحله بعدی تکمیل می‌شود.",
-        reply_markup=home_keyboard(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "help")
-async def help_callback(callback: CallbackQuery) -> None:
-    await callback.message.edit_text(
-        "ℹ️ <b>راهنما</b>\n\n"
-        "/start - نمایش منوی اصلی\n"
-        "/cancel - لغو عملیات در حال انجام\n"
-        "/whoami - نمایش شناسه تلگرام\n"
-        "/admin - ورود به پنل مدیریت برای ادمین",
         reply_markup=home_keyboard(),
     )
     await callback.answer()

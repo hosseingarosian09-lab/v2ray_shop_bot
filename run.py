@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 
 from app.config import get_settings
 from app.db import Database
-from app.handlers import admin, common, plans
+from app.handlers import admin, common, orders, plans
 
 
 async def main() -> None:
@@ -22,8 +22,9 @@ async def main() -> None:
     dp = Dispatcher()
 
     dp.include_router(admin.router)
-    dp.include_router(plans.router)
     dp.include_router(common.router)
+    dp.include_router(orders.router)
+    dp.include_router(plans.router)
 
     await bot.delete_webhook(drop_pending_updates=False)
     logging.info("Bot started with long polling")

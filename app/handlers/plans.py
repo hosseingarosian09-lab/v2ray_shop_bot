@@ -106,14 +106,9 @@ async def plan_details(callback: CallbackQuery, db: Database) -> None:
 
     await callback.message.edit_text(
         _plan_text(plan),
-        reply_markup=plan_details_keyboard(plan["category_id"]),
+        reply_markup=plan_details_keyboard(plan["id"], plan["category_id"]),
     )
     await callback.answer()
-
-
-@router.callback_query(F.data == "order_coming_soon")
-async def order_coming_soon(callback: CallbackQuery) -> None:
-    await callback.answer("ثبت سفارش در مرحله بعدی اضافه می‌شود.", show_alert=True)
 
 
 # ---------- مدیریت پلن‌ها ----------

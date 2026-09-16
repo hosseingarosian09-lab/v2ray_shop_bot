@@ -50,6 +50,26 @@ class Database:
                     FOREIGN KEY (category_id) REFERENCES categories(id),
                     UNIQUE (category_id, traffic_gb)
                 );
+
+                CREATE TABLE IF NOT EXISTS orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    plan_id INTEGER,
+                    duration_months INTEGER NOT NULL CHECK (duration_months > 0),
+                    duration_label TEXT NOT NULL,
+                    traffic_gb INTEGER NOT NULL CHECK (traffic_gb > 0),
+                    price INTEGER NOT NULL CHECK (price > 0),
+                    status TEXT NOT NULL DEFAULT 'pending_payment'
+                        CHECK (status IN ('pending_payment', 'pending_review', 'approved', 'rejected')),
+                    receipt_file_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (plan_id) REFERENCES plans(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+                CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
                 """
             )
             self._seed_catalog(conn)
@@ -97,7 +117,6 @@ class Database:
             """,
             demo_plans,
         )
-
 
     def _localize_categories(self, conn: sqlite3.Connection) -> None:
         names = {
@@ -160,7 +179,6 @@ class Database:
 
     def list_categories(self, *, active_only: bool = False, with_active_plans: bool = False):
         sql = "SELECT * FROM categories WHERE 1 = 1"
-        params: list[object] = []
         if active_only:
             sql += " AND is_active = 1"
         if with_active_plans:
@@ -170,7 +188,7 @@ class Database:
             )
         sql += " ORDER BY duration_months"
         with self._connect() as conn:
-            return conn.execute(sql, params).fetchall()
+            return conn.execute(sql).fetchall()
 
     def get_category(self, category_id: int):
         with self._connect() as conn:
@@ -267,3 +285,97 @@ class Database:
                 (new_value, plan_id),
             )
             return bool(new_value)
+
+    # ----- Orders -----
+
+    def create_order_from_plan(self, user_id: int, plan_id: int) -> int:
+        with self._connect() as conn:
+            plan = conn.execute(
+                """
+                SELECT
+                    p.id,
+                    p.traffic_gb,
+                    p.price,
+                    p.is_active,
+                    c.name AS category_name,
+                    c.duration_months,
+                    c.is_active AS category_active
+                FROM plans p
+                JOIN categories c ON c.id = p.category_id
+                WHERE p.id = ?
+                """,
+                (plan_id,),
+            ).fetchone()
+            if not plan or not plan["is_active"] or not plan["category_active"]:
+                raise ValueError("این پلن دیگر برای خرید در دسترس نیست.")
+
+            user_exists = conn.execute(
+                "SELECT 1 FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if not user_exists:
+                raise ValueError("اطلاعات کاربر ثبت نشده است. لطفاً /start را بزنید و دوباره تلاش کنید.")
+
+            cursor = conn.execute(
+                """
+                INSERT INTO orders (
+                    user_id,
+                    plan_id,
+                    duration_months,
+                    duration_label,
+                    traffic_gb,
+                    price,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'pending_payment')
+                """,
+                (
+                    user_id,
+                    plan["id"],
+                    plan["duration_months"],
+                    plan["category_name"],
+                    plan["traffic_gb"],
+                    plan["price"],
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def get_order_for_user(self, order_id: int, user_id: int):
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT * FROM orders WHERE id = ? AND user_id = ?",
+                (order_id, user_id),
+            ).fetchone()
+
+    def list_orders_for_user(self, user_id: int, limit: int = 20):
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM orders
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+
+    def save_order_receipt(self, order_id: int, user_id: int, file_id: str) -> bool:
+        with self._connect() as conn:
+            order = conn.execute(
+                "SELECT status FROM orders WHERE id = ? AND user_id = ?",
+                (order_id, user_id),
+            ).fetchone()
+            if not order or order["status"] not in {"pending_payment", "pending_review"}:
+                return False
+
+            conn.execute(
+                """
+                UPDATE orders
+                SET receipt_file_id = ?,
+                    status = 'pending_review',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+                """,
+                (file_id, order_id, user_id),
+            )
+            return True

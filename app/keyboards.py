@@ -6,8 +6,8 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 خرید کانفیگ", callback_data="buy")],
+            [InlineKeyboardButton(text="🧾 سفارش‌های من", callback_data="my_orders")],
             [InlineKeyboardButton(text="📦 سرویس‌های من", callback_data="services")],
-            [InlineKeyboardButton(text="ℹ️ راهنما", callback_data="help")],
         ]
     )
 
@@ -61,16 +61,68 @@ def plans_keyboard(plans, category_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def plan_details_keyboard(category_id: int) -> InlineKeyboardMarkup:
+def plan_details_keyboard(plan_id: int, category_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🛒 خرید این پلن",
-                    callback_data="order_coming_soon",
-                )
-            ],
+            [InlineKeyboardButton(text="🛒 خرید این پلن", callback_data=f"order_create:{plan_id}")],
             [InlineKeyboardButton(text="⬅️ بازگشت به پلن‌ها", callback_data=f"buycat:{category_id}")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+
+
+def payment_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📷 ارسال رسید", callback_data=f"order_receipt:{order_id}")],
+            [InlineKeyboardButton(text="🧾 سفارش‌های من", callback_data="my_orders")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+
+
+def orders_keyboard(orders) -> InlineKeyboardMarkup:
+    status_icons = {
+        "pending_payment": "💳",
+        "pending_review": "⏳",
+        "approved": "✅",
+        "rejected": "❌",
+    }
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=(
+                    f"{status_icons.get(order['status'], '🧾')} "
+                    f"#{order['id']} — {order['traffic_gb']} گیگ — {order['price']:,} تومان"
+                ),
+                callback_data=f"order_view:{order['id']}",
+            )
+        ]
+        for order in orders
+    ]
+    rows.append([InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def order_details_keyboard(order_id: int, status: str) -> InlineKeyboardMarkup:
+    rows = []
+    if status == "pending_payment":
+        rows.append([InlineKeyboardButton(text="📷 ارسال رسید", callback_data=f"order_receipt:{order_id}")])
+    elif status == "pending_review":
+        rows.append([InlineKeyboardButton(text="🔄 جایگزینی رسید", callback_data=f"order_receipt:{order_id}")])
+    rows.extend(
+        [
+            [InlineKeyboardButton(text="⬅️ سفارش‌های من", callback_data="my_orders")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def cancel_receipt_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ انصراف", callback_data=f"order_view:{order_id}")],
             [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="home")],
         ]
     )
